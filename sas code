@@ -1,0 +1,257 @@
+PROC IMPORT OUT= WORK.main DATAFILE= "C:\Users\shebbar\Desktop\main.csv" 
+            DBMS=csv REPLACE;
+			GETNAMES=YES;
+			RUN;
+
+
+	PROC IMPORT OUT= WORK.school DATAFILE= "C:\Users\shebbar\Desktop\schoolspending.xls" 
+    DBMS=xls REPLACE;
+    SHEET="elsec12t"; 
+    GETNAMES=YES;
+RUN;
+
+PROC IMPORT OUT= WORK.unclean DATAFILE= "C:\Users\shebbar\Desktop\unclean.csv" 
+            DBMS=csv REPLACE;
+			GETNAMES=YES;
+			RUN;
+
+
+
+
+data Rate;
+set Main(Keep =leaid11  ALL_COHORT_1112 ALL_RATE_1112);
+set Unclean(rename=(ALL_RATE_1112=Uncleaned));
+RUN;
+
+DATA Rate;
+set Rate(keep= leaid11  ALL_COHORT_1112 ALL_RATE_1112 Uncleaned);
+run;
+
+data rate;
+set rate (rename=(ALL_RATE_1112=Cleaned));
+run;
+
+DATA out_200;
+ set rate(where=(ALL_COHORT_1112>200));
+run;
+DATA out_60;
+set rate(where=(ALL_COHORT_1112>61&& ALL_COHORT_1112<200));
+run;
+DATA out_31;
+ set rate(where=(ALL_COHORT_1112>31 && ALL_COHORT_1112<61 ));
+run;
+DATA out_16;
+ set rate(where=(ALL_COHORT_1112>16 && ALL_COHORT_1112<31));
+run;
+DATA out_6;
+ set rate(where=(ALL_COHORT_1112>6 && ALL_COHORT_1112<16));
+run;
+DATA out_1;
+ set rate(where=(ALL_COHORT_1112>1 && ALL_COHORT_1112<6));
+run;
+
+proc contents data= Rate;
+run;
+
+data rate1;
+set rate;
+if  Uncleaned = "GE50"
+then Uncleaned= median(50,100);
+else if  Uncleaned = "GE80"
+then Uncleaned= median(80,100);
+else if  Uncleaned = "GE90"
+then Uncleaned= median(90,100);
+else if  Uncleaned = "GE95"
+then Uncleaned= median(95,100);
+else if  Uncleaned = "LE20"
+then Uncleaned= median(0,20);
+else if  Uncleaned = "LE10"
+then Uncleaned= median(0,10);
+else if  Uncleaned = "GE99"
+then Uncleaned= median(99,100);
+else Uncleaned=0;
+run;
+
+data rate1;
+set rate1;
+if Uncleaned=0 then final=Cleaned+Uncleaned;
+else final=Uncleaned;
+run;
+
+data Main;
+set main ( drop = ALL_RATE_1112);
+run;
+
+data Main;
+set main ;
+set rate1 ( keep = final);
+run;
+
+proc sql;
+create table merge as
+select * from main,school
+where upcase(main.School_District)=School.Name;
+
+PROC UNIVARIATE DATA=merge;
+  VAR final;
+RUN;
+quit;
+
+DATA HIST1;
+SET MERGE;
+IF ALL_COHORT_1112>61&& ALL_COHORT_1112=<200 THEN type="61-200";
+else if ALL_COHORT_1112>200 then type= ">200";
+else if ALL_COHORT_1112>31 && ALL_COHORT_1112=<61 then type="31-60";
+else if ALL_COHORT_1112>16 && ALL_COHORT_1112=<31 then type="16-30";
+else if ALL_COHORT_1112>1 && ALL_COHORT_1112=<16  then type="1-15";
+run;
+
+data hist1;
+set hist1 ( keep= type ALL_COHORT_1112);
+run; 
+
+
+goptions reset=all; 
+pattern value = solid color = red; 
+title "Frequency of total schools by cohort sizes"; 
+proc gchart 
+data=hist1; 
+vbar type / discrete type=percent; 
+run; 
+quit; 
+
+PROC SORT DATA=hist1 OUT=temp ;
+  BY type ;
+RUN ;
+
+data hist2(keep= type no_students );
+set temp;
+by type;
+if first.type then no_students=0;
+no_students+ALL_COHORT_1112;
+if last.type then output;
+run;
+
+data hist2;
+set hist2;
+IF no_students=9  THEN delete ;
+RUN;
+
+
+goptions reset=all; 
+pattern value = solid color = blue; 
+title "Frequency of number of students by cohort sizes"; 
+proc gchart 
+data=hist2; 
+vbar type/sumvar=no_students ; 
+run; 
+quit; 
+
+
+DATA out_200N;
+ set merge(where=(ALL_COHORT_1112>200));
+run;
+DATA out_60N;
+set merge(where=(ALL_COHORT_1112>61&& ALL_COHORT_1112<200));
+run;
+DATA out_31N;
+ set merge(where=(ALL_COHORT_1112>31 && ALL_COHORT_1112<61 ));
+run;
+DATA out_16N;
+ set merge(where=(ALL_COHORT_1112>16 && ALL_COHORT_1112<31));
+run;
+DATA out_6N;
+ set merge(where=(ALL_COHORT_1112>1 && ALL_COHORT_1112<16));
+run;
+
+
+
+PROC UNIVARIATE DATA=out_200N;
+  VAR final;
+RUN;
+quit;
+
+PROC UNIVARIATE DATA=out_60N;
+  VAR final;
+RUN;
+quit;
+
+PROC UNIVARIATE DATA=out_31N;
+  VAR final;
+RUN;
+quit;
+
+PROC UNIVARIATE DATA=out_16N;
+  VAR final;
+RUN;
+quit;
+
+DATA newmerge;
+     SET merge;
+     IF ALL_COHORT_1112< 200 then delete;
+  RUN;
+
+SYMBOL1 V=circle C=red I=r;
+proc gplot data=newmerge;
+   title "Percentage of renter occupied household vs Graduation rate";
+   axis1 label=(justify=c "Percentage of renter occupied household");
+   axis2 label=(justify=c "Graduation Rate");
+   plot final*pct_Sngl_Prns_HHD_ACS_08_12 / haxis=axis1 vaxis=axis2;
+   run;
+quit; 
+
+SYMBOL1 V=circle C=blue I=r;
+proc gplot data=newmerge;
+   title "Percentage of not high school graduate vs Graduation rate";
+    axis1 label=(justify=c "Percentage of not high school graduate");
+   axis2 label=(justify=c "Graduation Rate");
+plot final*pct_Not_HS_Grad_ACS_08_12 / haxis=axis1 vaxis=axis2;
+   run;
+quit;
+
+SYMBOL1 V=circle C=green I=r;
+proc gplot data=newmerge;
+   title "Percentage college gradautes in the district vs Graduatiion rate";
+     axis1 label=(justify=c "Percentage college gradautes in the district");
+   axis2 label=(justify=c "Graduation Rate");
+plot final*pct_College_ACS_08_12 / haxis=axis1 vaxis=axis2;
+   run;
+quit; 
+
+
+data newmerge;
+set newmerge;
+ tcu=log(TCURSSTA);
+ run;
+
+ data newmerge;
+set newmerge;
+ tben=log(TCURIBEN);
+ run;
+
+ ods html;
+ SYMBOL1 V=circle C=red I=r;
+proc gplot data=newmerge;
+   title "Instructional staff support vs Graduation rate";
+    axis1 label=(justify=c "Instructional staff support");
+   axis2 label=(justify=c "Graduation Rate");
+plot final*tcu / haxis=axis1 vaxis=axis2;
+   run;
+quit;
+
+proc gplot data=newmerge;
+   title "Employee benefits for graduation vs Graduatiion rate";
+   axis1 label=(justify=c "Employee benefits for graduation");
+   axis2 label=(justify=c "Graduation Rate");
+plot final*tben / haxis=axis1 vaxis=axis2;
+   run;
+quit;
+
+
+proc gplot data=newmerge;
+   title "Percentage of female householder households  vs Graduatiion rate";
+   axis1 label=(justify=c "Percentage of female householder households");
+   axis2 label=(justify=c "Graduation Rate");
+plot final*pct_Female_No_HB_CEN_2010 / haxis=axis1 vaxis=axis2;
+   run;
+quit;
